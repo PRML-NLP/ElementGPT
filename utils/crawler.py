@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from datetime import date, datetime, timedelta
 import json, os
 from tqdm import tqdm
+from utils.doc_processor import process_child_growth
 
 
 PEDIA_LINKS = {
@@ -47,7 +48,9 @@ class NaverpediaCrawler(object):
     def __init__(self, base_links):
         self.base_links = base_links
     
-    def get_content_link_list(self, base_link, num_pages):
+    def parse_content_links(self, base_link, num_pages):
+        """Parse content links from base link and number of pages"""
+        
         page_links = [base_link + f"&page={i}" for i in range(1, num_pages+1)]
         content_links = []
         
@@ -63,18 +66,83 @@ class NaverpediaCrawler(object):
                 link = div.find('a')
                 real_link = 'https://terms.naver.com' + link.get('href')
                 content_links.append(real_link)
+        
+        return content_links
     
-    def save_all_links(self, save_dir):
+    def get_all_content_links(self, save_dir=None):
+        """Get all content links from base links"""
+        
         results = {}
         for name, base_link in self.base_links.items():
             if base_link[1]==-1:
                 continue
             print("Connect", name)
-            content_links = self.get_content_link_list(base_link[0], base_link[1])
+            content_links = self.parse_content_links(base_link[0], base_link[1])
             results[name] = content_links
         
-        with open(os.path.join(save_dir, "all_content_links.json"), "w") as fout:
-            json.dump(results, indent=2, ensure_ascii=False)
+        if save_dir is not None:
+            with open(os.path.join(save_dir, "all_content_links.json"), "w") as fout:
+                json.dump(results, fout, indent=2, ensure_ascii=False)
+        
+        return results
+            
+    def load_all_content_links(self, cache_path):
+        with open(cache_path, "r") as fin:
+            link_dict = json.load(fin)
+            
+        return link_dict
+    
+    def scrap_contents(self, links, process_func):
+        """Scrap contents from links"""
+        
+        contents = []
+        for link in tqdm(links, total=len(links), desc="Scraping"):
+            res = requests.get(link)
+            res.raise_for_status()
+            res.encoding = None
+            html = res.text
+            soup = BeautifulSoup(html, "html.parser")
+            titlebox = soup.find("div", {"class": "headword_title"})
+            title = titlebox.find("h2", {"class": "headword"}).text
+            subtitle = titlebox.find("p", {"class": "desc"}).text
+            main_texts = soup.findAll("p", {"class": "se_textarea"})
+            doc = []
+            for seg in main_texts:
+                doc.extend(seg.findAll("span"))
+            
+            # preprocess document
+            doc = process_func(doc)
+            doc = "\n".join(doc)
+            
+            contents.append({
+                "title": title, "subtitle": subtitle,
+                "doc": doc, "link": link
+            })
+        
+        return contents
+            
+    def crawl(self, save_dir, cache_path=None):
+        """Crawl all contents from base links"""
+        
+        if cache_path is not None:
+            link_dict = self.load_all_content_links(cache_path)
+        else:
+            link_dict = self.get_all_content_links(save_dir)
+        
+        all_contents = {}
+        for name, links in link_dict.items():
+            print(name)
+            if name=="우리아이_성장백과":
+                all_contents[name] = self.scrap_contents(links, process_child_growth)
+            else:
+                break
+                # raise NotImplementedError
+        
+        with open(os.path.join(save_dir, "parsed_contents.json"), "w") as fout:
+            json.dump(all_contents, fout, indent=2, ensure_ascii=False)
+        
+        return all_contents
+            
         
 
 if __name__=="__main__":
@@ -85,4 +153,5 @@ if __name__=="__main__":
     os.makedirs(args.save_dir, exist_ok=True)
     
     crawler = NaverpediaCrawler(PEDIA_LINKS)
-    crawler.save_all_links(args.save_dir)
+    crawler.crawl(args.save_dir, cache_path="data/web_crawled/all_content_links.json")
+    
