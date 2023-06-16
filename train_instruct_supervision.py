@@ -41,12 +41,41 @@ IGNORE_INDEX = -100
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="EleutherAI/polyglot-ko-5.8b")
+    torch_dtype: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override the default `torch.dtype` and load the model under this dtype. If `auto` is passed, the "
+                "dtype will be automatically derived from the model's weights."
+            ),
+            "choices": ["auto", "bfloat16", "float16", "float32"],
+        },
+    )
+    low_cpu_mem_usage: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded."
+                "set True will benefit LLM loading time and RAM consumption."
+            )
+        },
+    )
 
 @dataclass
 class DataArguments:
     data_path: str = field(default=None, metadata={"help": "Path to the training data."})
     lazy_preprocess: bool = False
     preprocessing_num_workers: int = 8
+    block_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional input sequence length after tokenization. "
+                "The training dataset will be truncated in block of this size for training. "
+                "Default to the model max input length for single sentence inputs (take into account special tokens)."
+            )
+        },
+    )
 
 
 @dataclass
@@ -57,6 +86,7 @@ class TrainingArguments(transformers.TrainingArguments):
         default=1280,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
+    
 
 local_rank = None
 
@@ -195,6 +225,7 @@ def preprocess(
                     f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                     f" (ignored)"
                 )
+                print(len(rounds), conversation)
 
     return dict(
         input_ids=input_ids,
@@ -275,23 +306,19 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     return dict(train_dataset=train_dataset, eval_dataset=valid_dataset, data_collator=data_collator)
 
 
-def train():
+def train(model_args, data_args, training_args):
     global local_rank
     
-    parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    
-    # Set seed before initializing model.
-    set_seed(training_args.seed)
-
     local_rank = training_args.local_rank
     
-    # Load model and tokenizer
+    # Load model
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
     )
     model.config.use_cache = False
+    
+    # Load tokenizer
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
@@ -316,4 +343,10 @@ def train():
 
 
 if __name__ == "__main__":
-    train()
+    parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
+    
+    train(model_args, data_args, training_args)
