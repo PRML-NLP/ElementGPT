@@ -116,7 +116,7 @@ class NaverpediaCrawler(object):
             
             contents.append({
                 "title": title, "subtitle": subtitle,
-                "doc": doc, "link": link
+                "doc": doc, "url": link
             })
         
         return contents

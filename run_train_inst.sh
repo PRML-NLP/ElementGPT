@@ -1,0 +1,27 @@
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 --master_port=34321 train_instruct_supervision.py \
+    --model_name_or_path EleutherAI/polyglot-ko-5.8b \
+    --data_path data/unified_instruction.json \
+    --optim adafactor \
+    --fp16 \
+    --torch_dtype float16 \
+    --output_dir experiments/poly5.8b-general_b2_ga8_g8_l1k_v2 \
+    --run_name poly5.8b-general_b2_ga8_g8_l1k_v2 \
+    --num_train_epochs 3 \
+    --per_device_train_batch_size 2 \
+    --per_device_eval_batch_size 2 \
+    --gradient_accumulation_steps 8 \
+    --preprocessing_num_workers 6 \
+    --evaluation_strategy "steps" \
+    --eval_steps 2987 \
+    --save_strategy "steps" \
+    --save_steps 2987 \
+    --save_total_limit 1 \
+    --learning_rate 2e-5 \
+    --lr_scheduler_type "cosine" \
+    --weight_decay 0. \
+    --warmup_ratio 0.04 \
+    --logging_steps 2 \
+    --block_size 1024 \
+    --model_max_length 1024 \
+    --deepspeed ds_zero3-nooffload.json \
+    --low_cpu_mem_usage

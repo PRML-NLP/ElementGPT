@@ -265,8 +265,23 @@ register_conv_template(
     Conversation(
         name="elementgpt_for_general",
         system="호기심 많은 유저와 인공지능 어시스턴트 간의 채팅. "
-        "어시스턴트는 사용자의 질문에 도움이 되고 상세하며 정중한 답변을 합니다.",
-        roles=("USER", "ASSISTANT"),
+        "어시스턴트는 유저의 질문에 도움이 되고 상세하며 정중한 답변을 합니다.",
+        roles=("유저", "어시스턴트"),
+        messages=(),
+        offset=0,
+        sep_style=SeparatorStyle.ADD_COLON_TWO,
+        sep=" ",
+        sep2="<|endoftext|>",
+    )
+)
+
+# ElementGPT template3
+register_conv_template(
+    Conversation(
+        name="elementgpt_for_persona",
+        system="어시스턴트는 {age} {gender}로써 . "
+        "어시스턴트는 유저와 {domain} ",
+        roles=("유저", "어시스턴트"),
         messages=(),
         offset=0,
         sep_style=SeparatorStyle.ADD_COLON_TWO,
