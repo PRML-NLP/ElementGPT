@@ -154,12 +154,19 @@ def preprocess(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
 ) -> Dict:
-    conv = get_conv_template("elementgpt_for_general")
-    roles = {"human": conv.roles[0], "bot": conv.roles[1]}
+    conv_g = get_conv_template("elementgpt_for_general")
+    conv_p = get_conv_template("elementgpt_for_persona")
+    roles = {"human": conv_g.roles[0], "bot": conv_g.roles[1]}
 
     # Apply prompt templates
     conversations = []
     for i, source in enumerate(sources):
+        if "persona" in source[1]:
+            conv = conv_p.copy()
+            conv.system = conv.system.format_map(source[1]["persona"])
+        else:
+            conv = conv_g
+            
         if roles[source[0]["from"]] != conv.roles[0]:
             # Skip the first one if it is not from human
             source = source[1:]
@@ -170,7 +177,7 @@ def preprocess(
             assert role == conv.roles[j % 2], f"{i}"
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt())
-        
+    
     # Tokenize conversations
     input_ids = []
     targets = []
@@ -222,15 +229,17 @@ def preprocess(
             if cur_len != total_len:
                 target[:] = IGNORE_INDEX
                 rank0_print(
-                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+                    f"\nWARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                     f" (ignored)"
                 )
-                print(len(rounds), conversation)
-
+                rank0_print(len(rounds), conversation)
+                
+    rank0_print("\nDone.", len(input_ids))
     return dict(
         input_ids=input_ids,
         labels=targets,
     )
+
 
 
 class SupervisedDataset(Dataset):
