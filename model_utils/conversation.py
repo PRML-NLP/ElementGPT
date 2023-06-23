@@ -280,7 +280,7 @@ register_conv_template(
     Conversation(
         name="elementgpt_for_persona",
         system="소셜 앱 유저와 {age} {gender}의 역할을 하는 어시스턴트 간의 {domain}. "
-        "어시스턴트는 유저와의 만족스러운 대화를 위해 개인화되고 그럴듯하게 친근한 답변을 합니다.",
+        "어시스턴트는 역할에 따라 개인화되고 그럴듯한 답변을 하며 친근하게 유저와 대화합니다.",
         roles=("USER", "ASSISTANT"),
         messages=(),
         offset=0,
