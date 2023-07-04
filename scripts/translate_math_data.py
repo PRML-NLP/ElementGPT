@@ -28,16 +28,20 @@ def translate(dataloader):
             prompt.append(f"{i+2}. Q) {q} A) {a}")
             
         prompt = "\n---\n".join(prompt)
-            
-        response = chatgpt.create(
-          model="gpt-3.5-turbo",
-          messages=[{"role":"user", "content": f"{translate_prompt}{one_shot_Q}\n---\n{prompt}\n\n번역:\n{one_shot_R}\n---\n"}],
-          temperature=0.3,
-          max_tokens=2048,
-          top_p=1.0,
-          frequency_penalty=0.0,
-          presence_penalty=0.0
-        )
+        
+        try:
+            response = chatgpt.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role":"user", "content": f"{translate_prompt}{one_shot_Q}\n---\n{prompt}\n\n번역:\n{one_shot_R}\n---\n"}],
+            temperature=0.3,
+            max_tokens=2048,
+            top_p=1.0,
+            frequency_penalty=0.0,
+            presence_penalty=0.0
+            )
+        except Exception as e:
+            print(e)
+            continue
         
         translated = response.choices[0].message.content
         translated = translated.split("\n---\n")
