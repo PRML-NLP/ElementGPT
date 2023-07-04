@@ -44,9 +44,9 @@ def generate_stream(
     prompt = params["prompt"]
     len_prompt = len(prompt)
     temperature = float(params.get("temperature", 1.0))
-    repetition_penalty = float(params.get("repetition_penalty", 1.0))
-    top_p = float(params.get("top_p", 1.0))
-    top_k = int(params.get("top_k", -1))  # -1 means disable
+    repetition_penalty = float(params.get("repetition_penalty", 1.05))
+    top_p = float(params.get("top_p", 0.9))
+    top_k = int(params.get("top_k", 50))  # -1 means disable
     max_new_tokens = int(params.get("max_new_tokens", 512))
     stop_str = params.get("stop", None)
     echo = bool(params.get("echo", True))
@@ -282,6 +282,11 @@ def chat_loop(debug:bool, args):
             conv = get_conv_template("elementgpt_for_general")
             continue
         
+        if inp=="!!debug":
+            debug = not debug
+            print("Debug model", "on" if debug else "off")
+            continue
+        
         conv.append_message(conv.roles[0], inp)
         conv.append_message(conv.roles[1], None)
         
@@ -319,7 +324,7 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="experiments/poly1.3b-general_b4_ga8_g8_l1k_v2/checkpoint-4400")
     parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--repetition_penalty", type=float, default=1.0)
+    parser.add_argument("--repetition_penalty", type=float, default=1.05)
     parser.add_argument("--max_new_tokens", type=int, default=512)
     parser.add_argument("--device_id", type=int, default=0)
     args = parser.parse_args()

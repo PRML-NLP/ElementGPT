@@ -8,7 +8,7 @@ import openai
 openai.api_key = os.getenv("OPENAI_API_KEY")
 chatgpt = openai.ChatCompletion()
 
-instruction = "이 텍스트를 기반으로 주어진 문맥 없이 대답할 수 있는 Q(질문)과 A(대답) 형식으로 {subject} 수업 자료를 작성해주세요.\n\n"
+instruction = "이 텍스트를 기반으로 주어진 맥락 없이 대답할 수 있는 질문(Q)과 친절하고 세부적인 대답(A) 형식으로 {subject} 수업 자료를 작성해주세요.\n\n"
 system_prompt = "I want you to act as an elementary teacher in Korea. You will be responsible for teaching students how to read, write, and act as a teacher. My first request is '나는 초등학생을 가르치는데 도움이 필요합니다.'"
 
 def generate_QA(filelist, subject_name):
@@ -21,8 +21,8 @@ def generate_QA(filelist, subject_name):
         
         prompt = "".join(texts)
         
-        if len(prompt) > 1500:
-            prompt = prompt[:1500]
+        if len(prompt) > 1536:
+            prompt = prompt[:1536]
 
         try:
             response = chatgpt.create(
@@ -37,8 +37,10 @@ def generate_QA(filelist, subject_name):
                 frequency_penalty=0.0,
                 presence_penalty=0.0
             )
-        except openai.error.InvalidRequestError:
-            print(filename, len(prompt))
+        except Exception as e:
+            print(e)
+            print("====>", filename, len(prompt))
+            continue
         
         qa = response.choices[0].message.content
         qa = qa.split("\n\n")
@@ -77,6 +79,6 @@ if __name__=="__main__":
         filelist.extend(glob(f"{data_dir}/*.txt"))
     
     generated = generate_QA(filelist, args.subject_name)
-    with open(f"data/{args.subject_name}_{args.save_name}.json", "w") as fout:
-        json.dump(generated, fout, indent=2)
+    with open(f"data/{args.save_name}_{args.subject_name}.json", "w") as fout:
+        json.dump(generated, fout, indent=2, ensure_ascii=False)
         
