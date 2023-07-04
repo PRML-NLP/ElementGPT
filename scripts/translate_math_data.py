@@ -24,6 +24,7 @@ def translate(dataloader):
         for i, (q, a) in enumerate(zip(questions, answers)):
             a = a.replace("####", "-> correct answer:")
             a = re.sub(r"[\d+\-*/.x() =]+([$]?)<<([\d+\-*/.()]+)=([\-\d.]+)>>[ \d.]+", r" \1\\equ{\2=\3} ", a)
+            a = a.replace(" $ $\\equ", " $\\equ")
             prompt.append(f"{i+2}. Q) {q} A) {a}")
             
         prompt = "\n---\n".join(prompt)
