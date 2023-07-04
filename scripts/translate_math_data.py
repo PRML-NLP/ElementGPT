@@ -80,8 +80,8 @@ if __name__=="__main__":
     
     main_translated = translate(main_loader)
     with open("data/gsm8k_ko_main.json", "w") as fout:
-        json.dump(main_translated, fout, indent=2)
+        json.dump(main_translated, fout, indent=2, ensure_ascii=False)
         
     socratic_translated = translate(socratic_loader)
     with open("data/gsm8k_ko_socratic.json", "w") as fout:
-        json.dump(socratic_translated, fout, indent=2)
+        json.dump(socratic_translated, fout, indent=2, ensure_ascii=False)
