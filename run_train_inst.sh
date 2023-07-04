@@ -4,12 +4,12 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 --master_port=3
     --optim adafactor \
     --fp16 \
     --torch_dtype float16 \
-    --output_dir experiments/poly5.8b-general_b2_ga8_g8_l1k_v3 \
-    --run_name poly5.8b-general_b2_ga8_g8_l1k_v3 \
+    --output_dir experiments/poly5.8b-general_b3_ga5_g8_l1k_v3 \
+    --run_name poly5.8b-general_b3_ga5_g8_l1k_v3 \
     --num_train_epochs 3 \
-    --per_device_train_batch_size 2 \
-    --per_device_eval_batch_size 2 \
-    --gradient_accumulation_steps 8 \
+    --per_device_train_batch_size 3 \
+    --per_device_eval_batch_size 3 \
+    --gradient_accumulation_steps 5 \
     --preprocessing_num_workers 6 \
     --evaluation_strategy "epoch" \
     --save_strategy "epoch" \
@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 --master_port=3
     --learning_rate 5e-5 \
     --lr_scheduler_type "cosine" \
     --weight_decay 0. \
-    --warmup_ratio 0.04 \
+    --warmup_ratio 0.1 \
     --logging_steps 2 \
     --block_size 1024 \
     --model_max_length 1024 \
