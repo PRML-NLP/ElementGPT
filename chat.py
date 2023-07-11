@@ -263,7 +263,7 @@ def load_model_and_tokenizer(model_name, device_id):
 def chat_loop(debug:bool, args):
     model, tokenizer = load_model_and_tokenizer(args.model, args.device_id)
     
-    conv = get_conv_template("elementgpt_for_general")
+    conv = get_conv_template("elementgpt_for_teacher")
     chatio = SimpleChatIO()
     device= torch.device(f"cuda:{args.device_id}")
     
@@ -279,7 +279,7 @@ def chat_loop(debug:bool, args):
         
         if inp=="!!reset":
             print("Resetting conversation...")
-            conv = get_conv_template("elementgpt_for_general")
+            conv = get_conv_template("elementgpt_for_teacher")
             continue
         
         if inp=="!!debug":
@@ -323,7 +323,7 @@ def chat_loop(debug:bool, args):
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="experiments/poly1.3b-general_b4_ga8_g8_l1k_v2/checkpoint-4400")
-    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--repetition_penalty", type=float, default=1.05)
     parser.add_argument("--max_new_tokens", type=int, default=512)
     parser.add_argument("--device_id", type=int, default=0)

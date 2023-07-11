@@ -155,15 +155,14 @@ def preprocess(
     tokenizer: transformers.PreTrainedTokenizer,
 ) -> Dict:
     conv_g = get_conv_template("elementgpt_for_general")
-    conv_p = get_conv_template("elementgpt_for_persona")
+    conv_t = get_conv_template("elementgpt_for_teacher")
     roles = {"human": conv_g.roles[0], "bot": conv_g.roles[1]}
 
     # Apply prompt templates
     conversations = []
     for i, source in enumerate(sources):
-        if "persona" in source[1]:
-            conv = conv_p.copy()
-            conv.system = conv.system.format_map(source[1]["persona"])
+        if source[1]["domain"]=="education":
+            conv = conv_t
         else:
             conv = conv_g
             
