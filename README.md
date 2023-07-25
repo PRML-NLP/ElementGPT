@@ -5,5 +5,5 @@
 1. **Web crawling**
 
 ~~~bash
-python -m utils.crawl
+python -m utils.crawler
 ~~~
