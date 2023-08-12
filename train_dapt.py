@@ -151,12 +151,9 @@ def _tokenize_fn(text: str, tokenizer: transformers.PreTrainedTokenizer) -> Dict
 
 def preprocess(sources, tokenizer: transformers.PreTrainedTokenizer) -> Dict:
     """Preprocess the data by tokenizing."""
-    sources_tokenized = [
-        _tokenize_fn(source[key], tokenizer) 
-        for source in sources 
-        for key in source 
-        if isinstance(source[key], str)
-    ]
+    
+    sources_tokenized = [ _tokenize_fn(source, tokenizer) for source in sources]
+    
     input_ids = [tokenized['input_ids'] for tokenized in sources_tokenized]
     labels = [tokenized['labels'] for tokenized in sources_tokenized]
     input_ids_lens = [tokenized['input_ids_lens'] for tokenized in sources_tokenized]
@@ -172,11 +169,11 @@ def preprocess(sources, tokenizer: transformers.PreTrainedTokenizer) -> Dict:
 
 
 
-class SupervisedDataset(Dataset):
+class UnsupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
-        super(SupervisedDataset, self).__init__()
+        super(UnsupervisedDataset, self).__init__()
                 
         ext = data_path.split(".")[-1]
         data_cache_name = data_path[:-len(ext)] + "pt"
@@ -214,7 +211,7 @@ class SupervisedDataset(Dataset):
 
 
 @dataclass
-class DataCollatorForSupervisedDataset(object):
+class DataCollatorForUnsupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
 
     tokenizer: transformers.PreTrainedTokenizer
@@ -232,17 +229,14 @@ class DataCollatorForSupervisedDataset(object):
         )
 
 
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
+def make_unsupervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path)
-    num_train_samples = int(len(dataset) * 0.98)
-    num_valid_samples = len(dataset) - num_train_samples
-    train_dataset, valid_dataset = torch.utils.data.random_split(dataset, [num_train_samples, num_valid_samples])
+    dataset = UnsupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path)
     
-    rank0_print(f"#Train data: {len(train_dataset)}, #Valid data: {len(valid_dataset)}")
+    rank0_print(f"#Train data: {len(dataset)}")
     
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
-    return dict(train_dataset=train_dataset, eval_dataset=valid_dataset, data_collator=data_collator)
+    data_collator = DataCollatorForUnsupervisedDataset(tokenizer=tokenizer)
+    return dict(train_dataset=dataset, data_collator=data_collator)
 
 
 def train(model_args, data_args, training_args):
@@ -267,7 +261,7 @@ def train(model_args, data_args, training_args):
     )
     
     # Load data
-    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    data_module = make_unsupervised_data_module(tokenizer=tokenizer, data_args=data_args)
     
     # Initialize trainer    
     trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
@@ -278,7 +272,8 @@ def train(model_args, data_args, training_args):
         trainer.train()
         
     trainer.save_state()
-    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    # safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    trainer.save_model(training_args.output_dir)
 
 
 if __name__ == "__main__":
