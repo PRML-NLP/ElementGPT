@@ -8,7 +8,7 @@ import openai
 openai.api_key = os.getenv("OPENAI_API_KEY")
 chatgpt = openai.ChatCompletion()
 
-instruction = "Category: {category}\nTitle: {title}\nContent: {contents}\n\n이 글을 '초등학교 교사'와 '어시스턴트'와의 대화로 변환해주세요. '교사'는 학생들을 지도할 때 도움이 되는 정보를 얻기 위해 질문이나 요청을 하고, '어시스턴트'는 교사의 요청에 대해 content를 기반으로 정중히 답변합니다."
+instruction = "제목: {title}\n내용: {contents}\n\n이 내용을 '초등학교 교사'와 '어시스턴트'와의 대화로 변환해주세요. '교사'는 학생들을 지도할 때 도움이 되는 정보를 얻기 위해 질문이나 요청을 하고, '어시스턴트'는 교사의 요청에 대해 내용을 기반으로 정중히 답변합니다. 대화로 변환할 때, 교사나 어시스턴트는 이 내용을 제공받지 않은 상황이라 가정하십시오."
 system_prompt = "You are a helpful assistant."
 
 def generate_conv(data):
@@ -26,8 +26,8 @@ def generate_conv(data):
                     {"role":"system", "content": system_prompt},
                     {"role":"user", "content": inst}
                     ],
-                temperature=0.7,
-                max_tokens=2048,
+                temperature=0.33,
+                max_tokens=1200,
                 top_p=1.0,
                 frequency_penalty=0.0,
                 presence_penalty=0.0
@@ -40,11 +40,11 @@ def generate_conv(data):
         doc = response.choices[0].message.content
         turns = doc.split("교사:")[1:]
         dialog = []
-        for i, turn in enumerate(turns):
+        for j, turn in enumerate(turns):
             try:
                 usr, sys = turn.split("어시스턴트:")
             except Exception as e:
-                print(e, i, turn)
+                print(e, j, turn)
                 break
                 
             usr = usr.strip()
