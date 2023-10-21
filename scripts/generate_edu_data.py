@@ -20,6 +20,8 @@ def generate_doc(filelist, subject_name):
             texts = fin.readlines()
         
         prompt = "".join(texts)
+        if prompt.strip() == "":
+            continue
         
         if len(prompt) > 1000:
             prompt = prompt[:1000]
@@ -53,7 +55,7 @@ def generate_doc(filelist, subject_name):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--subject_name", type=str, default="과학")
+    parser.add_argument("--subject_name", type=str, default="사회")
     parser.add_argument("--data_dirs", nargs="+", type=str, required=True)
     parser.add_argument("--save_path", type=str, default="pretraining")
     parser.add_argument

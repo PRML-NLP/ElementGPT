@@ -13,7 +13,7 @@ SUBJECT_MAP = {
 
 if __name__=="__main__":
     PATH = "data/DAPT_data"
-    WEB_CRWALING_PATH = "data/web_crawled/naverpedia_preprocessed.json"
+    WEB_CRWALING_PATH = "data/web_crawled/icecream.json"
     BOOK_SUMMARY_PATH = "data/web_crawled/AIhub_book.json"
     filelist = glob(os.path.join(PATH, "*.json"))
     
@@ -63,18 +63,38 @@ if __name__=="__main__":
             try:
                 if re.match(r"\([\d-]+[가-힣]+\)", doc.split("\n\n")[0]) is not None:
                     doc = "\n\n".join(doc.split("\n\n")[1:])
+                
+                doc = re.sub(r"([^\n]) (\d[.])", r"\1\n\2", doc)
+                doc = re.sub(r"([^\n]) - ([가-힣])", r"\1\n- \2", doc)
             except Exception as e:
                 print(e)
             
             unified_data.append(prefix+"\n"+doc)
             
+    # with open("data/edu_textbook.json", "w") as fout:
+    #     json.dump(unified_data, fout, ensure_ascii=False, indent=2)
+    
+    # raise NotImplementedError
+    
+    title_set = []
     with open(WEB_CRWALING_PATH, "r") as fin:
         crawled_data = json.load(fin)
         for data in crawled_data:
-            doc = " ".join(data["category"].split("_")[1:]).strip()
+            if data["category"] in ["어린이백과_천재학습백과", "어린이백과_지식e"]:
+                doc = ""
+            else:
+                splited = data["category"].split("_")
+                if len(splited) > 1:
+                    doc = " ".join(splited[1:]).strip() + ": "
+                else:
+                    doc = data["category"]+": "
+            
             title = data['title'].replace("  ", " ")
-            doc += f"\n\n{title}\n\n{data['contents']}"
+            if title+data['contents'][:10] in title_set:
+                continue
+            doc += f"{title}\n\n{data['contents']}"
             unified_data.append(doc)
+            title_set.append(title+data['contents'][:10])
             
     with open(BOOK_SUMMARY_PATH, "r") as fin:
         data = json.load(fin)
@@ -85,7 +105,15 @@ if __name__=="__main__":
     for sample in tqdm(unified_data):
         output = re.sub(r"[.](\d+)[.]", r".\n\1.", sample)
         output = re.sub(r"개요 ([^:\n])", r"개요\n\1", output)
-        output = re.sub(r"[.] - ([가-힣])", r".\n- \1", output)
+        output = re.sub(r"([가-힣.]) - ([가-힣])", r"\1\n- \2", output)
+        output = re.sub(r"([가-힣.]) ([\d][.]) ([가-힣])", r"\1\n\2 \3", output)
+        output = re.sub(r"([가-힣]): [-]", r"\1:\n-", output)
+        output = re.sub(r"([^\n]) (\d[.])", r"\1\n\2", output)
+        output = re.sub(r"([^\n]) - ([가-힣])", r"\1\n- \2", output)
+        output = re.sub(r"([一-龥] [가-힣]+ [가-힣])([^,])", r"\1\n\2", output)
+        output = re.sub(r"([가-힣])\?([가-힣])", r"\1?\n\2", output)
+        output = re.sub(r" [*] ([가-힣])", r"\n* \1", output)
+        output = re.sub(r"([가-힣])[.]([가-힣]+)", r"\1. \2", output)
         # output = output.replace(" 소.\n", "소개.\n")
         if len(output) < 35:
             continue

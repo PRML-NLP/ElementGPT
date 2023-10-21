@@ -37,6 +37,18 @@ def partial_stop(output, stop_str):
     return False
 
 
+def stream_output(output_stream):
+    pre = 0
+    for outputs in output_stream:
+        output_text = outputs["text"]
+        output_text = output_text.strip().split(" ")
+        now = len(output_text) - 1
+        if now > pre:
+            print(" ".join(output_text[pre:now]), end=" ", flush=True)
+            pre = now
+    print(" ".join(output_text[pre:]), flush=True)
+    return " ".join(output_text)
+
 @torch.inference_mode()
 def generate_stream(
     model, tokenizer, params, device, context_len=1024, stream_interval=2
@@ -44,9 +56,9 @@ def generate_stream(
     prompt = params["prompt"]
     len_prompt = len(prompt)
     temperature = float(params.get("temperature", 1.0))
-    repetition_penalty = float(params.get("repetition_penalty", 1.04))
-    top_p = float(params.get("top_p", 1.0))
-    top_k = int(params.get("top_k", -1))  # -1 means disable
+    repetition_penalty = float(params.get("repetition_penalty", 1.05))
+    top_p = float(params.get("top_p", 0.9))
+    top_k = int(params.get("top_k", 50))  # -1 means disable
     max_new_tokens = int(params.get("max_new_tokens", 512))
     stop_str = params.get("stop", None)
     echo = bool(params.get("echo", True))
@@ -228,27 +240,6 @@ class ChatIO(abc.ABC):
         """Stream output."""
         
 
-class SimpleChatIO(ChatIO):
-    def prompt_for_input(self, role) -> str:
-        return input(f"{role}: ")
-
-    def prompt_for_output(self, role: str):
-        print(f"{role}: ", end="", flush=True)
-
-    def stream_output(self, output_stream):
-        pre = 0
-        for outputs in output_stream:
-            output_text = outputs["text"]
-            output_text = output_text.strip().split(" ")
-            now = len(output_text) - 1
-            if now > pre:
-                print(" ".join(output_text[pre:now]), end=" ", flush=True)
-                pre = now
-        print(" ".join(output_text[pre:]), flush=True)
-        return " ".join(output_text)
-
-
-
 def load_model_and_tokenizer(model_name, device_id):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
@@ -260,16 +251,15 @@ def load_model_and_tokenizer(model_name, device_id):
     return model, tokenizer
 
 
-def chat_loop(debug:bool, args):
+def completion_loop(args):
     model, tokenizer = load_model_and_tokenizer(args.model, args.device_id)
     
-    conv = get_conv_template("elementgpt_for_teacher_inference")
-    chatio = SimpleChatIO()
     device= torch.device(f"cuda:{args.device_id}")
     
+    paragraph = ""
     while True:
         try:
-            inp = chatio.prompt_for_input(conv.roles[0])
+            inp = input("> ")
         except EOFError:
             inp = ""
         
@@ -279,60 +269,37 @@ def chat_loop(debug:bool, args):
         
         if inp=="!!reset":
             print("Resetting conversation...")
-            os.makedirs("logs", exist_ok=True)
-
-            end_time = str(time.time())
-            with open("logs/"+end_time+".json", "w") as fout:
-                json.dump(conv.messages, fout, ensure_ascii=False, indent=2)
-            
-            conv = get_conv_template("elementgpt_for_teacher_inference")
+            paragraph = ""
+                
             continue
         
-        if inp=="!!debug":
-            debug = not debug
-            print("Debug model", "on" if debug else "off")
-            continue
-        
-        conv.append_message(conv.roles[0], inp)
-        conv.append_message(conv.roles[1], None)
-        
-        prompt = conv.get_prompt()
+        paragraph = paragraph + " " + inp
         
         gen_params = {
             "model": args.model,
-            "prompt": prompt,
+            "prompt": paragraph,
             "temperature": args.temperature,
             "repetition_penalty": args.repetition_penalty,
             "max_new_tokens": args.max_new_tokens,
-            "stop": conv.stop_str,
-            "stop_token_ids": conv.stop_token_ids,
+            "stop": None,
+            "stop_token_ids": None,
             "echo": False,
         }
 
-        chatio.prompt_for_output(conv.roles[1])
         output_stream = generate_stream(model, tokenizer, gen_params, device=device)
         t = time.time()
-        outputs = chatio.stream_output(output_stream)
+        outputs = stream_output(output_stream)
         duration = time.time() - t
-        conv.update_last_message(outputs.strip())
+        paragraph = paragraph + " " + outputs.strip()
         
-        if debug:
-            num_tokens = len(tokenizer.encode(outputs))
-            msg = {
-                "conv_template": conv.name,
-                "prompt": prompt,
-                "outputs": outputs,
-                "speed (token/s)": round(num_tokens / duration, 2),
-            }
-            print(f"\n{msg}\n")
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="experiments/poly5.8b-DAPT2INST_b120")
-    parser.add_argument("--temperature", type=float, default=0.95)
-    parser.add_argument("--repetition_penalty", type=float, default=1.02)
+    parser.add_argument("--model", type=str, default="experiments/poly12.8b-DAPT")
+    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--repetition_penalty", type=float, default=1.05)
     parser.add_argument("--max_new_tokens", type=int, default=512)
     parser.add_argument("--device_id", type=int, default=0)
     args = parser.parse_args()
     
-    chat_loop(False, args)
+    completion_loop(args)
