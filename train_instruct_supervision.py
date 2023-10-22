@@ -301,8 +301,8 @@ def preprocess(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
 ) -> Dict:
-    conv_g = get_conv_template("elementgpt_for_general")
-    conv_t = get_conv_template("elementgpt_for_teacher")
+    conv_g = get_conv_template("koalpaca")
+    conv_t = get_conv_template("koalpaca")
     roles = {"human": conv_g.roles[0], "bot": conv_g.roles[1]}
 
     # Apply prompt templates
