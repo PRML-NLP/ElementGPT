@@ -26,21 +26,60 @@ from transformers import (
     Trainer,
     set_seed,
     AutoConfig,
-    CONFIG_MAPPING
+    CONFIG_MAPPING,
+    BitsAndBytesConfig
 )
 from torch.utils.data import Dataset
-
 from model_utils.conversation import get_conv_template, SeparatorStyle
 
+# For Q-Lora
+import bitsandbytes as bnb
+import evaluate
+from peft import (
+    prepare_model_for_kbit_training,
+    LoraConfig,
+    get_peft_model,
+    PeftModel
+)
+from peft.tuners.lora import LoraLayer
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+from packaging import version
+from packaging.version import parse
+import importlib
+import warnings
+
+def is_ipex_available():
+    def get_major_and_minor_from_version(full_version):
+        return str(version.parse(full_version).major) + "." + str(version.parse(full_version).minor)
+
+    _torch_version = importlib.metadata.version("torch")
+    if importlib.util.find_spec("intel_extension_for_pytorch") is None:
+        return False
+    _ipex_version = "N/A"
+    try:
+        _ipex_version = importlib.metadata.version("intel_extension_for_pytorch")
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    torch_major_and_minor = get_major_and_minor_from_version(_torch_version)
+    ipex_major_and_minor = get_major_and_minor_from_version(_ipex_version)
+    if torch_major_and_minor != ipex_major_and_minor:
+        warnings.warn(
+            f"Intel Extension for PyTorch {ipex_major_and_minor} needs to work with PyTorch {ipex_major_and_minor}.*,"
+            f" but PyTorch {_torch_version} is found. Please switch to the matching version and run again."
+        )
+        return False
+    return True
+
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = True
 
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 IGNORE_INDEX = -100
 
-
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="EleutherAI/polyglot-ko-5.8b")
+    model_name_or_path: Optional[str] = field(default="EleutherAI/polyglot-ko-12.8b")
     torch_dtype: Optional[str] = field(
         default=None,
         metadata={
@@ -60,6 +99,15 @@ class ModelArguments:
             )
         },
     )
+    trust_remote_code: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Enable unpickling of arbitrary code in AutoModelForCausalLM#from_pretrained."}
+    )
+    use_auth_token: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Enables using Huggingface auth token from Git Credentials."}
+    )
+
 
 @dataclass
 class DataArguments:
@@ -82,11 +130,110 @@ class DataArguments:
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adafactor")
+    
     model_max_length: int = field(
         default=1280,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
     
+    full_finetune: bool = field(
+        default=False,
+        metadata={"help": "Finetune the entire model without adapters."}
+    )
+    adam8bit: bool = field(
+        default=False,
+        metadata={"help": "Use 8-bit adam."}
+    )
+    double_quant: bool = field(
+        default=True,
+        metadata={"help": "Compress the quantization statistics through double quantization."}
+    )
+    quant_type: str = field(
+        default="nf4",
+        metadata={"help": "Quantization data type to use. Should be one of `fp4` or `nf4`."}
+    )
+    bits: int = field(
+        default=4,
+        metadata={"help": "How many bits to use."}
+    )
+    lora_r: int = field(
+        default=64,
+        metadata={"help": "Lora R dimension."}
+    )
+    lora_alpha: float = field(
+        default=16,
+        metadata={"help": " Lora alpha."}
+    )
+    lora_dropout: float = field(
+        default=0.0,
+        metadata={"help":"Lora dropout."}
+    )
+    max_memory_MB: int = field(
+        default=49000,
+        metadata={"help": "Free memory per gpu."}
+    )
+    report_to: str = field(
+        default='none',
+        metadata={"help": "To use wandb or something else for reporting."}
+    )
+
+def find_all_linear_names(args, model):
+    cls = bnb.nn.Linear4bit if args.bits == 4 else (bnb.nn.Linear8bitLt if args.bits == 8 else torch.nn.Linear)
+    lora_module_names = set()
+    for name, module in model.named_modules():
+        if isinstance(module, cls):
+            names = name.split('.')
+            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+
+
+    if 'lm_head' in lora_module_names: # needed for 16-bit
+        lora_module_names.remove('lm_head')
+    return list(lora_module_names)
+    
+class SavePeftModelCallback(transformers.TrainerCallback):
+    def save_model(self, args, state, kwargs):
+        print('Saving PEFT checkpoint...')
+        if state.best_model_checkpoint is not None:
+            checkpoint_folder = os.path.join(state.best_model_checkpoint, "adapter_model")
+        else:
+            checkpoint_folder = os.path.join(args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}")
+
+        peft_model_path = os.path.join(checkpoint_folder, "adapter_model")
+        kwargs["model"].save_pretrained(peft_model_path)
+
+        pytorch_model_path = os.path.join(checkpoint_folder, "pytorch_model.bin")
+        if os.path.exists(pytorch_model_path):
+            os.remove(pytorch_model_path)
+
+    def on_save(self, args, state, control, **kwargs):
+        self.save_model(args, state, kwargs)
+        return control
+
+    def on_train_end(self, args, state, control, **kwargs):
+        def touch(fname, times=None):
+            with open(fname, 'a'):
+                os.utime(fname, times)
+
+        touch(os.path.join(args.output_dir, 'completed'))
+        self.save_model(args, state, kwargs)
+
+
+def print_trainable_parameters(args, model):
+    """
+    Prints the number of trainable parameters in the model.
+    """
+    trainable_params = 0
+    all_param = 0
+    for _, param in model.named_parameters():
+        all_param += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+    if args.bits == 4: trainable_params /= 2
+    print(
+        f"trainable params: {trainable_params} || "
+        f"all params: {all_param} || "
+        f"trainable: {100 * trainable_params / all_param}"
+    )
 
 local_rank = None
 
@@ -171,12 +318,14 @@ def preprocess(
             source = source[1:]
 
         conv.messages = []
-        for j, sentence in enumerate(source):
+        for j in range(len(source)):
+            sentence = source[j]
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2], f"{i}"
             conv.append_message(role, sentence["value"])
-        conversations.append(conv.get_prompt())
-    
+            if j % 2:
+                conversations.append(conv.get_prompt())
+                
     # Tokenize conversations
     input_ids = []
     targets = []
@@ -192,7 +341,7 @@ def preprocess(
         input_ids.append(input_ids_sample)
         targets.append(input_ids_sample.clone())
 
-    assert conv.sep_style == SeparatorStyle.ADD_COLON_TWO
+    # assert conv.sep_style == SeparatorStyle.ADD_COLON_TWO
 
     rank0_print("Masking targets...")
     # Mask targets
@@ -238,8 +387,6 @@ def preprocess(
         input_ids=input_ids,
         labels=targets,
     )
-
-
 
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
@@ -304,7 +451,7 @@ class DataCollatorForSupervisedDataset(object):
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path)
-    num_train_samples = int(len(dataset) * 0.98)
+    num_train_samples = int(len(dataset) * 0.995)
     num_valid_samples = len(dataset) - num_train_samples
     train_dataset, valid_dataset = torch.utils.data.random_split(dataset, [num_train_samples, num_valid_samples])
     
@@ -314,17 +461,65 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     return dict(train_dataset=train_dataset, eval_dataset=valid_dataset, data_collator=data_collator)
 
 
-def train(model_args, data_args, training_args):
-    global local_rank
+def get_accelate_model(model_args, training_args):
+    if torch.cuda.is_available():
+        n_gpus = torch.cuda.device_count()
+    if is_ipex_available() and torch.xpu.is_available():
+        n_gpus = torch.xpu.device_count()
+        
+    max_memory = f'{training_args.max_memory_MB}MB'
+    max_memory = {i: max_memory for i in range(n_gpus)}
+    device_map = "auto"
+
+    # if we are in a distributed setting, we need to set the device map and max memory per device
+    if os.environ.get('LOCAL_RANK') is not None:
+        local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+        device_map = {'': local_rank}
+        max_memory = {'': max_memory[local_rank]}
+
+
+    if training_args.full_finetune: assert training_args.bits in [16, 32]
     
-    local_rank = training_args.local_rank
+    print(f'loading base model {model_args.model_name_or_path}...')
+    compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
     
     # Load model
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
+        load_in_4bit=training_args.bits==4,
+        load_in_8bit=training_args.bits==8,
+        device_map=device_map,
+        max_memory=max_memory,
+        quantization_config=BitsAndBytesConfig(
+            load_in_4bit=training_args.bits == 4,
+            load_in_8bit=training_args.bits == 8,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_use_double_quant=training_args.double_quant,
+            bnb_4bit_quant_type=training_args.quant_type,
+        ),
+        torch_dtype=(torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)),
+        trust_remote_code=model_args.trust_remote_code,
+        use_auth_token=model_args.use_auth_token
     )
     model.config.use_cache = False
+    
+    if compute_dtype == torch.float16 and training_args.bits==4:
+        if torch.cuda.is_bf16_supported():
+            print('='*80)
+            print('Your GPU supports bfloat16, you can accelerate training with the argument --bf16')
+            print('='*80)
+            
+    if compute_dtype == torch.float16 and (is_ipex_available() and torch.xpu.is_available()):
+        compute_dtype = torch.bfloat16
+        print('Intel XPU does not support float16 yet, so switching to bfloat16')
+
+    setattr(model, 'model_parallel', True)
+    setattr(model, 'is_parallelizable', True)
+    
+    model.config.torch_dtype=(torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
     
     # Load tokenizer
     tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -335,19 +530,80 @@ def train(model_args, data_args, training_args):
         use_fast=False,
     )
     
+    if not training_args.full_finetune:
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
+        
+    if not training_args.full_finetune:
+        if training_args.output_dir is not None and os.path.exists(os.path.join(training_args.output_dir, 'adapter_model')):
+            print("Loading adapters from checkpoint.")
+            model = PeftModel.from_pretrained(model, os.path.join(training_args.output_dir, 'adapter_model'), is_trainable=True)
+        else:
+            print(f'adding LoRA modules...')
+            modules = find_all_linear_names(training_args, model)
+            config = LoraConfig(
+                r=training_args.lora_r,
+                lora_alpha=training_args.lora_alpha,
+                target_modules=modules,
+                lora_dropout=training_args.lora_dropout,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            model = get_peft_model(model, config)
+    
+    for name, module in model.named_modules():
+        if isinstance(module, LoraLayer):
+            if training_args.bf16:
+                module = module.to(torch.bfloat16)
+        if 'norm' in name:
+            module = module.to(torch.float32)
+        if 'lm_head' in name or 'embed_tokens' in name:
+            if hasattr(module, 'weight'):
+                if training_args.bf16 and module.weight.dtype == torch.float32:
+                    module = module.to(torch.bfloat16)
+                    
+    return model, tokenizer
+
+
+def train(model_args, data_args, training_args):
+    global local_rank
+    
+    local_rank = training_args.local_rank
+    
+    # # Load model
+    # model = transformers.AutoModelForCausalLM.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     cache_dir=training_args.cache_dir,
+    # )
+    # model.config.use_cache = False
+    
+    # # Load tokenizer
+    # tokenizer = transformers.AutoTokenizer.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     cache_dir=training_args.cache_dir,
+    #     model_max_length=training_args.model_max_length,
+    #     padding_side="right",
+    #     use_fast=False,
+    # )
+    model, tokenizer = get_accelate_model(model_args, training_args)
+    
     # Load data
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     
     # Initialize trainer    
     trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
-
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        trainer.train(resume_from_checkpoint=True)
+    
+    if training_args.full_finetune:
+        if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+            trainer.train(resume_from_checkpoint=True)
+        else:
+            trainer.train()
     else:
+        trainer.add_callback(SavePeftModelCallback)
         trainer.train()
-        
+                
     trainer.save_state()
-    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    # safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    trainer.save_model(training_args.output_dir)
 
 
 if __name__ == "__main__":

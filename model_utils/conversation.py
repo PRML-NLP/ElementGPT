@@ -47,7 +47,10 @@ class Conversation:
     def get_prompt(self) -> str:
         """Get the prompt for generation."""
         if self.sep_style == SeparatorStyle.ADD_COLON_SINGLE:
-            ret = self.system + self.sep
+            if self.system:
+                ret = self.system + self.sep
+            else:
+                ret = ""
             for role, message in self.messages:
                 if message:
                     ret += role + ": " + message + self.sep
@@ -59,7 +62,8 @@ class Conversation:
             ret = self.system + seps[0]
             for i, (role, message) in enumerate(self.messages):
                 if message:
-                    ret += role + ": " + message + seps[i % 2]
+                    ret += role + ": " + message
+                    ret += seps[1] if i%2 and i==len(self.messages)-1 else seps[0]
                 else:
                     ret += role + ":"
             return ret
@@ -249,13 +253,28 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="elementgpt_for_teacher",
-        system="초등학교 교사와 인공지능 어시스턴트 간의 채팅. "
-        "어시스턴트는 초등학교 교육과정을 기반으로 교사의 질문에 도움이 되고 상세하며 정중한 답변을 합니다.",
-        roles=("USER", "ASSISTANT"),
+        system="초등학교 교사와 인공지능 어시스턴트 간의 대화. "
+        "어시스턴트는 교육에 대한 유저의 질문이나 지시에 도움이 되는 답변을 합니다.",
+        roles=("### 질문", "### 답변"),
         messages=(),
         offset=0,
         sep_style=SeparatorStyle.ADD_COLON_TWO,
-        sep=" ",
+        sep="\n\n",
+        sep2="<|endoftext|>",
+    )
+)
+
+# ElementGPT template1
+register_conv_template(
+    Conversation(
+        name="elementgpt_for_teacher_inference",
+        system="초등학교 교사와 인공지능 어시스턴트 간의 대화. "
+        "어시스턴트는 교육에 대한 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
+        roles=("### 질문", "### 답변"),
+        messages=(),
+        offset=0,
+        sep_style=SeparatorStyle.ADD_COLON_TWO,
+        sep="\n\n",
         sep2="<|endoftext|>",
     )
 )
@@ -264,13 +283,13 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="elementgpt_for_general",
-        system="호기심 많은 유저와 인공지능 어시스턴트 간의 채팅. "
-        "어시스턴트는 유저의 질문에 도움이 되고 상세하며 정중한 답변을 합니다.",
-        roles=("USER", "ASSISTANT"),
+        system="호기심 많은 유저와 인공지능 어시스턴트 간의 대화. "
+        "어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
+        roles=("### 질문", "### 답변"),
         messages=(),
         offset=0,
         sep_style=SeparatorStyle.ADD_COLON_TWO,
-        sep=" ",
+        sep="\n\n",
         sep2="<|endoftext|>",
     )
 )
@@ -281,7 +300,7 @@ register_conv_template(
         name="elementgpt_for_persona",
         system="SNS 유저와 {age} {gender}의 역할을 하는 어시스턴트 간의 {domain}. "
         "어시스턴트는 역할에 따라 개인화되고 그럴듯한 말을 하며 친근하게 유저와 대화합니다.",
-        roles=("USER", "ASSISTANT"),
+        roles=("USER", "Assistant"),
         messages=(),
         offset=0,
         sep_style=SeparatorStyle.ADD_COLON_TWO,
@@ -322,13 +341,14 @@ register_conv_template(
 # Alpaca default template
 register_conv_template(
     Conversation(
-        name="alpaca",
-        system="Below is an instruction that describes a task. Write a response that appropriately completes the request.",
-        roles=("### Instruction", "### Response"),
+        name="koalpaca",
+        system="",
+        roles=("### 질문", "### 답변"),
         messages=(),
         offset=0,
         sep_style=SeparatorStyle.ADD_COLON_SINGLE,
         sep="\n\n",
+        sep2="<|endoftext|>",
     )
 )
 

@@ -1,4 +1,4 @@
-import argparse
+import argparse, os, datetime, json
 import abc, gc, time
 from typing import Iterable, Optional
 
@@ -44,9 +44,9 @@ def generate_stream(
     prompt = params["prompt"]
     len_prompt = len(prompt)
     temperature = float(params.get("temperature", 1.0))
-    repetition_penalty = float(params.get("repetition_penalty", 1.05))
-    top_p = float(params.get("top_p", 0.9))
-    top_k = int(params.get("top_k", 50))  # -1 means disable
+    repetition_penalty = float(params.get("repetition_penalty", 1.04))
+    top_p = float(params.get("top_p", 1.0))
+    top_k = int(params.get("top_k", -1))  # -1 means disable
     max_new_tokens = int(params.get("max_new_tokens", 512))
     stop_str = params.get("stop", None)
     echo = bool(params.get("echo", True))
@@ -263,7 +263,7 @@ def load_model_and_tokenizer(model_name, device_id):
 def chat_loop(debug:bool, args):
     model, tokenizer = load_model_and_tokenizer(args.model, args.device_id)
     
-    conv = get_conv_template("elementgpt_for_teacher")
+    conv = get_conv_template("elementgpt_for_teacher_inference")
     chatio = SimpleChatIO()
     device= torch.device(f"cuda:{args.device_id}")
     
@@ -279,7 +279,13 @@ def chat_loop(debug:bool, args):
         
         if inp=="!!reset":
             print("Resetting conversation...")
-            conv = get_conv_template("elementgpt_for_teacher")
+            os.makedirs("logs", exist_ok=True)
+
+            end_time = str(time.time())
+            with open("logs/"+end_time+".json", "w") as fout:
+                json.dump(conv.messages, fout, ensure_ascii=False, indent=2)
+            
+            conv = get_conv_template("elementgpt_for_teacher_inference")
             continue
         
         if inp=="!!debug":
@@ -322,9 +328,9 @@ def chat_loop(debug:bool, args):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="experiments/poly1.3b-general_b4_ga8_g8_l1k_v2/checkpoint-4400")
-    parser.add_argument("--temperature", type=float, default=0.8)
-    parser.add_argument("--repetition_penalty", type=float, default=1.05)
+    parser.add_argument("--model", type=str, default="experiments/poly5.8b-DAPT2INST_b120")
+    parser.add_argument("--temperature", type=float, default=0.95)
+    parser.add_argument("--repetition_penalty", type=float, default=1.02)
     parser.add_argument("--max_new_tokens", type=int, default=512)
     parser.add_argument("--device_id", type=int, default=0)
     args = parser.parse_args()
