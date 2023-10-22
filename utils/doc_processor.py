@@ -31,6 +31,8 @@ def remove_superfluous_char(doc):
     # Remove line alignments
     doc = re.sub(r"([\s])\1{1,}", " ", doc)
     doc = re.sub(r"[\s]+", " ", doc)
+    
+    # Remove 휴대폰
 
     return doc.strip()
 
