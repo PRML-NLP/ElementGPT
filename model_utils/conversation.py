@@ -6,6 +6,7 @@ Based on https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
 import dataclasses
 from enum import auto, Enum
 from typing import List, Any, Dict
+import random
 
 
 class SeparatorStyle(Enum):
@@ -27,8 +28,6 @@ class Conversation:
 
     # The name of this template
     name: str
-    # The system prompt
-    system: str
     # Two roles
     roles: List[str]
     # All messages. Each item is (role, message).
@@ -38,6 +37,10 @@ class Conversation:
     # Separators
     sep_style: SeparatorStyle
     sep: str
+    # List of the system prompts
+    systems: List[str]
+    # The system prompt
+    system: str = ""
     sep2: str = None
     # Stop criteria (the default one is EOS token)
     stop_str: str = None
@@ -59,11 +62,15 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.ADD_COLON_TWO:
             seps = [self.sep, self.sep2]
-            ret = self.system + seps[0]
+            
+            if self.systems:
+                system = random.choice(self.systems)
+            else:
+                system = self.system
+            ret = system + seps[0]
             for i, (role, message) in enumerate(self.messages):
                 if message:
-                    ret += role + ": " + message
-                    ret += seps[1] if i%2 and i==len(self.messages)-1 else seps[0]
+                    ret += role + ": " + message + seps[i%2]
                 else:
                     ret += role + ":"
             return ret
@@ -164,6 +171,7 @@ class Conversation:
         return Conversation(
             name=self.name,
             system=self.system,
+            systems=self.systems,
             roles=self.roles,
             messages=[[x, y] for x, y in self.messages],
             offset=self.offset,
@@ -206,6 +214,7 @@ register_conv_template(
         name="one_shot",
         system="A chat between a curious human and an artificial intelligence assistant. "
         "The assistant gives helpful, detailed, and polite answers to the human's questions.",
+        systems=[],
         roles=("Human", "Assistant"),
         messages=(
             (
@@ -238,6 +247,7 @@ Remember to tailor the activities to the birthday child's interests and preferen
 register_conv_template(
     Conversation(
         name="zero_shot",
+        systems=[],
         system="A chat between a curious human and an artificial intelligence assistant. "
         "The assistant gives helpful, detailed, and polite answers to the human's questions.",
         roles=("Human", "Assistant"),
@@ -253,8 +263,29 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="elementgpt_for_teacher",
-        system="초등학교 교사와 인공지능 어시스턴트 간의 대화. "
-        "어시스턴트는 교육에 대한 유저의 질문이나 지시에 도움이 되는 답변을 합니다.",
+        system="초등학교 교사와 어시스턴트 간의 대화. 어시스턴트는 교사의 질문이나 지시에 도움이 되는 답변을 합니다.",
+        systems=[
+            "초등학교 교사와 어시스턴트 간의 대화. 어시스턴트는 교사의 질문이나 지시에 도움이 되는 답변을 합니다.",
+            "초등학교 교사와 어시스턴트 사이의 상호작용. 어시스턴트는 교사의 질문과 지시에 유용한 답변을 제공합니다.",
+            "어시스턴트는 초등학교 교사와의 대화에서 교사의 질문과 지시에 도움을 주며 유용한 답변을 제공합니다.",
+            "초등학교 교사와 어시스턴트 간의 소통. 어시스턴트는 교사의 질문과 지시에 대답하여 도움을 제공합니다."
+        ],
+        roles=("### 질문", "### 답변"),
+        messages=(),
+        offset=0,
+        sep_style=SeparatorStyle.ADD_COLON_TWO,
+        sep="\n\n",
+        sep2="<|endoftext|>",
+    )
+)
+
+# ElementGPT template1
+register_conv_template(
+    Conversation(
+        name="elementgpt_for_inference",
+        system="초등학교 교사와 어시스턴트 간의 대화. "
+        "어시스턴트는 선생님의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
+        systems=[],
         roles=("### 질문", "### 답변"),
         messages=(),
         offset=0,
@@ -268,8 +299,9 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="elementgpt_for_teacher_inference",
-        system="초등학교 교사와 인공지능 어시스턴트 간의 대화. "
+        system="초등학교 교사와 어시스턴트 간의 대화. "
         "어시스턴트는 교육에 대한 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
+        systems=[],
         roles=("### 질문", "### 답변"),
         messages=(),
         offset=0,
@@ -283,8 +315,13 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="elementgpt_for_general",
-        system="호기심 많은 유저와 인공지능 어시스턴트 간의 대화. "
-        "어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
+        system="호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
+        systems=[
+            "호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
+            "유저와 어시스턴트 간의 상호작용. 어시스턴트는 유저의 질문과 지시를 세심하게 처리하며 정중하게 응답합니다.",
+            "호기심 있는 유저와 어시스턴트 간의 상호작용. 어시스턴트는 유저의 질문과 지시를 세심하게 대응하며 공손한 답변을 제공합니다.",
+            "유저와 어시스턴트 간의 대화. 호기심을 가진 유저의 질문과 지시를 받아들이고, 상세하고 예의 바른 방식으로 응답합니다."
+        ],
         roles=("### 질문", "### 답변"),
         messages=(),
         offset=0,
@@ -294,25 +331,11 @@ register_conv_template(
     )
 )
 
-# ElementGPT template3
-register_conv_template(
-    Conversation(
-        name="elementgpt_for_persona",
-        system="SNS 유저와 {age} {gender}의 역할을 하는 어시스턴트 간의 {domain}. "
-        "어시스턴트는 역할에 따라 개인화되고 그럴듯한 말을 하며 친근하게 유저와 대화합니다.",
-        roles=("USER", "Assistant"),
-        messages=(),
-        offset=0,
-        sep_style=SeparatorStyle.ADD_COLON_TWO,
-        sep=" ",
-        sep2="<|endoftext|>",
-    )
-)
-
 # Vicuna v1.1 template
 register_conv_template(
     Conversation(
         name="vicuna_v1.1",
+        systems=[],
         system="A chat between a curious user and an artificial intelligence assistant. "
         "The assistant gives helpful, detailed, and polite answers to the user's questions.",
         roles=("USER", "ASSISTANT"),
@@ -327,6 +350,7 @@ register_conv_template(
 # Koala default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="koala_v1",
         system="BEGINNING OF CONVERSATION:",
         roles=("USER", "GPT"),
@@ -343,6 +367,7 @@ register_conv_template(
     Conversation(
         name="koalpaca",
         system="",
+        systems=[],
         roles=("### 질문", "### 답변"),
         messages=(),
         offset=0,
@@ -355,6 +380,7 @@ register_conv_template(
 # Dolly V2 default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="dolly_v2",
         system="Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n",
         roles=("### Instruction", "### Response"),
@@ -369,6 +395,7 @@ register_conv_template(
 # OpenAssistant Pythia default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="oasst_pythia",
         system="",
         roles=("<|prompter|>", "<|assistant|>"),
@@ -382,6 +409,7 @@ register_conv_template(
 # StableLM Alpha default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="stablelm",
         system="""<|SYSTEM|># StableLM Tuned (Alpha version)
 - StableLM is a helpful and harmless open-source AI language model developed by StabilityAI.
@@ -401,6 +429,7 @@ register_conv_template(
 # Baize default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="baize",
         system="The following is a conversation between a human and an AI assistant named Baize (named after a mythical creature in Chinese folklore). Baize is an open-source AI assistant developed by UCSD and Sun Yat-Sen University. The human and the AI assistant take turns chatting. Human statements start with [|Human|] and AI assistant statements start with [|AI|]. The AI assistant always provides responses in as much detail as possible, and in Markdown format. The AI assistant always declines to engage with topics, questions and instructions related to unethical, controversial, or sensitive issues. Complete the transcript in exactly that format.\n",
         roles=("[|Human|]", "[|AI|]"),
@@ -418,6 +447,7 @@ register_conv_template(
 # RWKV-4-Raven default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="rwkv",
         system="",
         roles=("Bob", "Alice"),
@@ -438,6 +468,7 @@ register_conv_template(
 # Buddy default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="openbuddy",
         system="""Consider a conversation between User (a human) and Assistant (named Buddy).
 Buddy is an INTP-T, a friendly, intelligent and multilingual AI assistant, by OpenBuddy team. GitHub: https://github.com/OpenBuddy/OpenBuddy
@@ -461,6 +492,7 @@ Assistant: Hi, I'm Buddy, your AI assistant. How can I help you today?""",
 # Phoenix default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="phoenix",
         system="A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions.\n\n",
         roles=("Human", "Assistant"),
@@ -475,6 +507,7 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="chatgpt",
+        systems=[],
         system="You are a helpful assistant.",
         roles=("user", "assistant"),
         messages=(),
@@ -489,6 +522,7 @@ register_conv_template(
     Conversation(
         name="claude",
         system="",
+        systems=[],
         roles=("Human", "Assistant"),
         messages=(),
         offset=0,
@@ -501,6 +535,7 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="mpt",
+        systems=[],
         system="""<|im_start|>system
 - You are a helpful assistant chatbot trained by MosaicML.
 - You answer questions.
@@ -521,6 +556,7 @@ register_conv_template(
 #            https://github.com/google/generative-ai-python/blob/9c99bcb474a991a97a2e7d62fcdb52db7ce40729/google/generativeai/discuss.py#L40
 register_conv_template(
     Conversation(
+        systems=[],
         name="bard",
         system="",
         roles=("0", "1"),
@@ -534,6 +570,7 @@ register_conv_template(
 # BiLLa default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="billa",
         system="",
         roles=("Human", "Assistant"),
@@ -548,6 +585,7 @@ register_conv_template(
 # RedPajama INCITE default template
 register_conv_template(
     Conversation(
+        systems=[],
         name="redpajama-incite",
         system="",
         roles=("<human>", "<bot>"),
@@ -564,6 +602,7 @@ register_conv_template(
     Conversation(
         name="h2ogpt",
         system="",
+        systems=[],
         roles=("<|prompt|>", "<|answer|>"),
         messages=(),
         offset=0,
@@ -576,6 +615,7 @@ register_conv_template(
 # Reference: https://github.com/nomic-ai/gpt4all/blob/d4861030b778da6db59d21d2927a4aba4f9f1f43/gpt4all-bindings/python/gpt4all/gpt4all.py#L232
 register_conv_template(
     Conversation(
+        systems=[],
         name="snoozy",
         system="### Instruction:\nThe prompt below is a question to answer, a task to complete, or a conversation to respond to; decide which and write an appropriate response.",
         roles=("### Prompt", "### Response"),
@@ -591,6 +631,7 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="manticore",
+        systems=[],
         system="",
         roles=("USER", "ASSISTANT"),
         messages=(),

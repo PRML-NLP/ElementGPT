@@ -20,23 +20,31 @@ examples=[
     ["학년 초에 학부모에게 보내는 입학 안내 이메일 양식을 작성해줘."],
 ]
 
-MODEL_NAME= "experiments/poly12.8b-DAPT"
-ADAPTER_NAME = "experiments/poly12.8b-DAPT2INST_v4"
+MODEL_NAME= "experiments/poly12.8b-DAPT2INST_wo_edu"
+ADAPTER_NAME = None#"experiments/poly12.8b-DAPT2INST_third"
 DEVICE_ID = 4
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    torch_dtype=torch.bfloat16, # torch_dtype=torch.float16,
+    torch_dtype=torch.bfloat16 if ADAPTER_NAME is not None else torch.float16,
 ).to(f'cuda:{DEVICE_ID}')
-model = PeftModel.from_pretrained(model, ADAPTER_NAME)
-model = model.merge_and_unload()
-model.eval()
 
-LOG_DIR = "logs/"+MODEL_NAME.split("/")[-1]
+if ADAPTER_NAME is not None:
+    model = PeftModel.from_pretrained(model, ADAPTER_NAME)
+    model = model.merge_and_unload()
+    model.eval()
+
+FOLDER_NAME = MODEL_NAME if ADAPTER_NAME is None else ADAPTER_NAME
+LOG_DIR = "logs/"+FOLDER_NAME.split("/")[-1]
 os.makedirs(LOG_DIR, exist_ok=True)
 
-def predict(message, history, temp, rep):
-    conv = get_conv_template("elementgpt_for_teacher_inference")
+# system_prompt = "호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
+system_prompt = "초등학교 교사와 어시스턴트 간의 대화. 어시스턴트는 선생님의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
+
+def predict(message, history, sys_prompt, temp, rep):
+    conv = get_conv_template("elementgpt_for_inference")
+    conv.system = sys_prompt
+    
     for turn in history:
         conv.append_message(conv.roles[0], turn[0])
         conv.append_message(conv.roles[1], turn[1])
@@ -82,7 +90,9 @@ def predict(message, history, temp, rep):
 if __name__=="__main__":
     # Launch the demo
     demo = gr.ChatInterface(predict, additional_inputs=[
+                                gr.Textbox(value=system_prompt, label="System prompt"),
                                 gr.Slider(0.0, 1.0, value=0.75, label="Temperature"),
-                                gr.Slider(1.0, 1.3, value=1.0, label="Repetition penalty")],
+                                gr.Slider(1.0, 1.3, value=1.0, label="Repetition penalty"),
+                            ],
                             examples=examples,)
     demo.queue().launch(share=True)

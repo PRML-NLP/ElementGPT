@@ -301,8 +301,8 @@ def preprocess(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
 ) -> Dict:
-    conv_g = get_conv_template("koalpaca")
-    conv_t = get_conv_template("koalpaca")
+    conv_g = get_conv_template("elementgpt_for_general")
+    conv_t = get_conv_template("elementgpt_for_teacher")
     roles = {"human": conv_g.roles[0], "bot": conv_g.roles[1]}
 
     # Apply prompt templates
@@ -323,8 +323,7 @@ def preprocess(
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2], f"{i}"
             conv.append_message(role, sentence["value"])
-            if j % 2:
-                conversations.append(conv.get_prompt())
+        conversations.append(conv.get_prompt())
                 
     # Tokenize conversations
     input_ids = []
@@ -364,8 +363,9 @@ def preprocess(
             instruction_len = len(tokenizer(parts[0]).input_ids) - 2
 
             target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
-
+            
             cur_len += round_len
+            
         target[cur_len:] = IGNORE_INDEX
 
         if False:
@@ -387,7 +387,7 @@ def preprocess(
         input_ids=input_ids,
         labels=targets,
     )
-
+    
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -451,7 +451,7 @@ class DataCollatorForSupervisedDataset(object):
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path)
-    num_train_samples = int(len(dataset) * 0.995)
+    num_train_samples = int(len(dataset) * 0.999)
     num_valid_samples = len(dataset) - num_train_samples
     train_dataset, valid_dataset = torch.utils.data.random_split(dataset, [num_train_samples, num_valid_samples])
     

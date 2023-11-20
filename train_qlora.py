@@ -35,6 +35,7 @@ from transformers import (
 )
 from torch.utils.data import Dataset
 from model_utils.conversation import get_conv_template, SeparatorStyle
+from train_instruct_supervision import preprocess
 
 # For Q-Lora
 import bitsandbytes as bnb
@@ -43,8 +44,12 @@ from peft import (
     prepare_model_for_kbit_training,
     LoraConfig,
     get_peft_model,
-    PeftModel
+    PeftModel,
+    PeftConfig
 )
+
+from torch.nn import functional as F
+
 from peft.tuners.lora import LoraLayer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from packaging import version
@@ -84,6 +89,7 @@ IGNORE_INDEX = -100
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="EleutherAI/polyglot-ko-12.8b")
+    peft_model_id: Optional[str] = field(default=None)
     torch_dtype: Optional[str] = field(
         default=None,
         metadata={
@@ -134,12 +140,13 @@ class DataArguments:
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adafactor")
-    
     model_max_length: int = field(
         default=1280,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
-    
+    neftune_noise_alpha: int = field(
+        default=5,
+    )    
     full_finetune: bool = field(
         default=False,
         metadata={"help": "Finetune the entire model without adapters."}
@@ -173,7 +180,7 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={"help":"Lora dropout."}
     )
     max_memory_MB: int = field(
-        default=49000,
+        default=48000,
         metadata={"help": "Free memory per gpu."}
     )
     report_to: str = field(
@@ -299,98 +306,7 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
         input_ids_lens=input_ids_lens,
         labels_lens=labels_lens,
     )
-    
-    
-def preprocess(
-    sources,
-    tokenizer: transformers.PreTrainedTokenizer,
-) -> Dict:
-    conv_g = get_conv_template("koalpaca")
-    conv_t = get_conv_template("koalpaca")
-    roles = {"human": conv_g.roles[0], "bot": conv_g.roles[1]}
 
-    # Apply prompt templates
-    conversations = []
-    for i, source in enumerate(sources):
-        if source[1]["domain"]=="education":
-            conv = conv_t
-        else:
-            conv = conv_g
-            
-        if roles[source[0]["from"]] != conv.roles[0]:
-            # Skip the first one if it is not from human
-            source = source[1:]
-
-        conv.messages = []
-        for j in range(len(source)):
-            sentence = source[j]
-            role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2], f"{i}"
-            conv.append_message(role, sentence["value"])
-            if j % 2:
-                conversations.append(conv.get_prompt())
-                
-    # Tokenize conversations
-    input_ids = []
-    targets = []
-    for i, conversation in enumerate(tqdm(conversations, desc="Tokenizing inputs")):
-        input_ids_sample = tokenizer(
-            conversation,
-            return_tensors="pt",
-            padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
-        ).input_ids[0]
-        
-        input_ids.append(input_ids_sample)
-        targets.append(input_ids_sample.clone())
-
-    # assert conv.sep_style == SeparatorStyle.ADD_COLON_TWO
-
-    rank0_print("Masking targets...")
-    # Mask targets
-    sep = conv.sep + conv.roles[1] + ": "
-    for conversation, target in tqdm(zip(conversations, targets), total=len(conversations)):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum()) + 1
-
-        rounds = conversation.split(conv.sep2)
-        cur_len = 1
-        target[:cur_len] = IGNORE_INDEX
-        for i, rou in enumerate(rounds):
-            if rou == "":
-                break
-
-            parts = rou.split(sep)
-            if len(parts) != 2:
-                break
-            parts[0] += sep
-            round_len = len(tokenizer(rou).input_ids)
-            instruction_len = len(tokenizer(parts[0]).input_ids) - 2
-
-            target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
-
-            cur_len += round_len
-        target[cur_len:] = IGNORE_INDEX
-
-        if False:
-            z = target.clone()
-            z = torch.where(z == IGNORE_TOKEN_ID, tokenizer.unk_token_id, z)
-            rank0_print(tokenizer.decode(z))
-
-        if cur_len < tokenizer.model_max_length:
-            if cur_len != total_len:
-                target[:] = IGNORE_INDEX
-                rank0_print(
-                    f"\nWARNING: tokenization mismatch: {cur_len} vs. {total_len}."
-                    f" (ignored)"
-                )
-                rank0_print(len(rounds), conversation)
-                
-    rank0_print("\nDone.", len(input_ids))
-    return dict(
-        input_ids=input_ids,
-        labels=targets,
-    )
 
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
@@ -464,7 +380,6 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset, eval_dataset=valid_dataset, data_collator=data_collator)
 
-
 def get_accelate_model(model_args, training_args):
     if torch.cuda.is_available():
         n_gpus = torch.cuda.device_count()
@@ -509,6 +424,10 @@ def get_accelate_model(model_args, training_args):
         use_auth_token=model_args.use_auth_token
     )
     model.config.use_cache = False
+    
+    if model_args.peft_model_id is not None:
+        peft_config = PeftConfig.from_pretrained(model_args.peft_model_id)
+        model = PeftModel.from_pretrained(model, model_args.peft_model_id)
     
     if compute_dtype == torch.float16 and training_args.bits==4:
         if torch.cuda.is_bf16_supported():
@@ -593,15 +512,18 @@ def train(model_args, data_args, training_args, noise_alpha):
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
 
     # Initialize trainer
-    # trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
-    
-    # Initialize NEFT trainer
-    trainer = SFTTrainer(model=model,
-                         tokenizer=tokenizer, 
-                         args=training_args, 
-                         neftune_noise_alpha=noise_alpha, 
-                         **data_module)
-    
+    if training_args.neftune_noise_alpha > 0:   
+        # Initialize NEFT trainer
+        trainer = SFTTrainer(model=model,
+                        tokenizer=tokenizer, 
+                        args=training_args, 
+                        neftune_noise_alpha=training_args.neftune_noise_alpha,
+                        packing=True,
+                        max_seq_length=training_args.model_max_length,
+                        **data_module)
+    else:
+        trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+        
     if training_args.full_finetune:
         if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
             trainer.train(resume_from_checkpoint=True)

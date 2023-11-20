@@ -19,6 +19,8 @@ import json, os, pathlib
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Sequence
 
+from trl import SFTTrainer
+
 import torch
 import transformers
 from transformers import (
@@ -30,11 +32,9 @@ from transformers import (
 )
 
 from transformers import AutoTokenizer
-
 from torch.utils.data import Dataset
-
 from model_utils.conversation import get_conv_template, SeparatorStyle
-
+from train_instruct_supervision import make_supervised_data_module
 
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
@@ -79,6 +79,7 @@ class DataArguments:
             )
         },
     )
+    instruction_tuning: bool = False
 
 
 @dataclass
@@ -88,6 +89,9 @@ class TrainingArguments(transformers.TrainingArguments):
     model_max_length: int = field(
         default=1280,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
+    )
+    neftune_noise_alpha: int = field(
+        default=5,
     )
     
 
@@ -261,10 +265,23 @@ def train(model_args, data_args, training_args):
     )
     
     # Load data
-    data_module = make_unsupervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    if data_args.instruction_tuning:
+        data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    else:
+        data_module = make_unsupervised_data_module(tokenizer=tokenizer, data_args=data_args)
     
-    # Initialize trainer    
-    trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    # Initialize trainer
+    if training_args.neftune_noise_alpha > 0:   
+        # Initialize NEFT trainer
+        trainer = SFTTrainer(model=model,
+                        tokenizer=tokenizer, 
+                        args=training_args, 
+                        neftune_noise_alpha=training_args.neftune_noise_alpha,
+                        packing=True,
+                        max_seq_length=training_args.model_max_length,
+                        **data_module)
+    else:
+        trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
