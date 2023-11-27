@@ -22,7 +22,7 @@ examples=[
 
 MODEL_NAME= "experiments/poly12.8b-DAPT2INST_wo_edu"
 ADAPTER_NAME = None
-DEVICE_ID = 4
+DEVICE_ID = 1
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
@@ -38,23 +38,23 @@ FOLDER_NAME = MODEL_NAME if ADAPTER_NAME is None else ADAPTER_NAME
 LOG_DIR = "logs/"+FOLDER_NAME.split("/")[-1]
 os.makedirs(LOG_DIR, exist_ok=True)
 
+global system_prompt
 system_prompt = "호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
 
-def get_prompt(selete_user):
-    prompt_dict = {
+prompt_dict = {
         "교사" : "초등학교 교사와 어시스턴트 간의 대화. 어시스턴트는 선생님의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
         "학부모" : "초등학생 자녀의 학부모와 어시스턴트 간의 대화. 어시스턴트는 학부모의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
         "학생" : "초등학생과 어시스턴트 간의 대화. 어시스턴트는 학생의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다"
     }
-    return prompt_dict[selete_user]
+
+def change_textbox(selected):
+    return prompt_dict[selected]
 
 
-def predict(message, history, selete_user, temp, rep):
-    print(selete_user)
-    
+def predict(message, history, select_user, temp, rep):
     conv = get_conv_template("elementgpt_for_inference")
-
-    conv.system = get_prompt(selete_user)
+    conv.system = system_prompt if select_user is None else prompt_dict[select_user]
+    # system_prompt = conv.system
 
     for turn in history:
         conv.append_message(conv.roles[0], turn[0])
@@ -98,15 +98,13 @@ def predict(message, history, selete_user, temp, rep):
              
     yield partial_message
 
-def change_textbox(selete):
-    return gr.Textbox(value=get_prompt(selete), label = "System prompt")
 
 
 if __name__=="__main__":
     # Launch the demo
     with gr.Blocks() as demo:
         radio = gr.Radio(["교사", "학생", "학부모"], label="사용자를 선택해주세요", type='value')
-        text = gr.Textbox(interactive=True, label="System prompt")
+        text = gr.Textbox(interactive=True, label="System prompt", placeholder=system_prompt)
         radio.change(change_textbox, inputs=radio, outputs=text)
         
         chat = gr.ChatInterface(predict, additional_inputs=[
@@ -115,4 +113,4 @@ if __name__=="__main__":
                                 gr.Slider(1.0, 1.3, value=1.0, label="Repetition penalty"),
                             ],
                             examples=examples,)
-    demo.queue().launch(share=True)
+    demo.queue().launch(share=True, server_name="0.0.0.0")
