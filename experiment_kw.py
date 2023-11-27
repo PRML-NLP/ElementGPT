@@ -21,24 +21,24 @@ examples=[
 ]
 
 MODEL_NAME= "experiments/poly12.8b-DAPT2INST_wo_edu"
-ADAPTER_NAME = None
+ADAPTER_NAME = None#"experiments/poly12.8b-DAPT2INST_third"
 DEVICE_ID = 4
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    torch_dtype=torch.bfloat16 if ADAPTER_NAME is not None else torch.float16,
-).to(f'cuda:{DEVICE_ID}')
+# tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+# model = AutoModelForCausalLM.from_pretrained(
+#     MODEL_NAME,
+#     torch_dtype=torch.bfloat16 if ADAPTER_NAME is not None else torch.float16,
+# ).to(f'cuda:{DEVICE_ID}')
 
-if ADAPTER_NAME is not None:
-    model = PeftModel.from_pretrained(model, ADAPTER_NAME)
-    model = model.merge_and_unload()
-    model.eval()
+# if ADAPTER_NAME is not None:
+#     model = PeftModel.from_pretrained(model, ADAPTER_NAME)
+#     model = model.merge_and_unload()
+#     model.eval()
 
-FOLDER_NAME = MODEL_NAME if ADAPTER_NAME is None else ADAPTER_NAME
-LOG_DIR = "logs/"+FOLDER_NAME.split("/")[-1]
-os.makedirs(LOG_DIR, exist_ok=True)
+# FOLDER_NAME = MODEL_NAME if ADAPTER_NAME is None else ADAPTER_NAME
+# LOG_DIR = "logs/"+FOLDER_NAME.split("/")[-1]
+# os.makedirs(LOG_DIR, exist_ok=True)
 
-system_prompt = "호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
+# system_prompt = "호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
 
 def get_prompt(selete_user):
     prompt_dict = {
@@ -71,7 +71,6 @@ def predict(message, history, selete_user, temp, rep):
         "repetition_penalty": rep,
         "max_new_tokens": 700,
         "stop": conv.stop_str,
-        #"stop": conv.sep,
         "stop_token_ids": conv.stop_token_ids,
         "echo": False,
     }

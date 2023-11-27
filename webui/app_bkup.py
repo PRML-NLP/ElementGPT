@@ -21,7 +21,7 @@ examples=[
 ]
 
 MODEL_NAME= "experiments/poly12.8b-DAPT2INST_wo_edu"
-ADAPTER_NAME = None
+ADAPTER_NAME = None#"experiments/poly12.8b-DAPT2INST_third"
 DEVICE_ID = 4
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
@@ -38,24 +38,13 @@ FOLDER_NAME = MODEL_NAME if ADAPTER_NAME is None else ADAPTER_NAME
 LOG_DIR = "logs/"+FOLDER_NAME.split("/")[-1]
 os.makedirs(LOG_DIR, exist_ok=True)
 
-system_prompt = "호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
+# system_prompt = "호기심 많은 유저와 어시스턴트 간의 대화. 어시스턴트는 유저의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
+system_prompt = "초등학교 교사와 어시스턴트 간의 대화. 어시스턴트는 선생님의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다."
 
-def get_prompt(selete_user):
-    prompt_dict = {
-        "교사" : "초등학교 교사와 어시스턴트 간의 대화. 어시스턴트는 선생님의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
-        "학부모" : "초등학생 자녀의 학부모와 어시스턴트 간의 대화. 어시스턴트는 학부모의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다.",
-        "학생" : "초등학생과 어시스턴트 간의 대화. 어시스턴트는 학생의 질문이나 지시에 도움이 되고 상세하며 정중한 답변을 합니다"
-    }
-    return prompt_dict[selete_user]
-
-
-def predict(message, history, selete_user, temp, rep):
-    print(selete_user)
-    
+def predict(message, history, sys_prompt, temp, rep):
     conv = get_conv_template("elementgpt_for_inference")
-
-    conv.system = get_prompt(selete_user)
-
+    conv.system = sys_prompt
+    
     for turn in history:
         conv.append_message(conv.roles[0], turn[0])
         conv.append_message(conv.roles[1], turn[1])
@@ -71,7 +60,6 @@ def predict(message, history, selete_user, temp, rep):
         "repetition_penalty": rep,
         "max_new_tokens": 700,
         "stop": conv.stop_str,
-        #"stop": conv.sep,
         "stop_token_ids": conv.stop_token_ids,
         "echo": False,
     }
@@ -97,20 +85,12 @@ def predict(message, history, selete_user, temp, rep):
         json.dump({"prompt": input_prompt, "instruction": message, "response": partial_message}, fout, ensure_ascii=False, indent=2)
              
     yield partial_message
-
-def change_textbox(selete):
-    return gr.Textbox(value=get_prompt(selete), label = "System prompt")
-
+        
 
 if __name__=="__main__":
     # Launch the demo
-    with gr.Blocks() as demo:
-        radio = gr.Radio(["교사", "학생", "학부모"], label="사용자를 선택해주세요", type='value')
-        text = gr.Textbox(interactive=True, label="System prompt")
-        radio.change(change_textbox, inputs=radio, outputs=text)
-        
-        chat = gr.ChatInterface(predict, additional_inputs=[
-                                radio,
+    demo = gr.ChatInterface(predict, additional_inputs=[
+                                gr.Textbox(value=system_prompt, label="System prompt"),
                                 gr.Slider(0.0, 1.0, value=0.75, label="Temperature"),
                                 gr.Slider(1.0, 1.3, value=1.0, label="Repetition penalty"),
                             ],
