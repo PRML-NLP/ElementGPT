@@ -21,7 +21,7 @@ examples=[
 ]
 
 MODEL_NAME= "experiments/poly12.8b-DAPT2INST_wo_edu"
-ADAPTER_NAME = None#"experiments/poly12.8b-DAPT2INST_third"
+ADAPTER_NAME = None
 DEVICE_ID = 4
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
