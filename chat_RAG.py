@@ -299,7 +299,7 @@ def chat_loop(debug: bool, args):
         docs = langchain(inp)
         sentence = ''
         for doc in docs:
-            sentence = sentence + "\n" + str(doc)
+            sentence = sentence + "\n" + doc.page_content
         prompt = sentence + "\n\n" + prompt
         gen_params = {
             "model": args.model,

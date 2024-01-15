@@ -21,8 +21,6 @@ def langchain(question):
     element_counts = Counter(source_lst)
     embedding = OpenAIEmbeddings(openai_api_key="openai_api_key")
     vectordb = Chroma.from_documents(documents=texts, embedding=embedding)
-    retriever = vectordb.as_retriever()
-    docs = retriever.get_relevant_documents(question)
     retriever = vectordb.as_retriever(search_kwargs={'k': 2}) # k는 top-k
     docs = retriever.get_relevant_documents(question)
     return docs
