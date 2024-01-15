@@ -249,15 +249,7 @@ class SimpleChatIO(ChatIO):
 
 
 def load_model_and_tokenizer(model_name, device_id):
-    tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                              bos_token="<bos>",
-                                              eos_token="<eos>",
-                                              unk_token="<unk>",
-                                              sep_token="<sep>",
-                                              pad_token="<pad>",
-                                              cls_token="<cls>",
-                                              mask_token="<mask>"
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float16,
